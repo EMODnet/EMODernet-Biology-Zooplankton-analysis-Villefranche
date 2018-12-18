@@ -1,0 +1,514 @@
+---
+title: "Preparation of Villefranche EMODNET data"
+author: "Peter M.J. Herman"
+date: "29 mei 2018"
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Villefranche data
+
+I selected all zooplankton data from the Villefranche permanent zooplankton station from EMODNET. There are two files, as there are additional measurements and facts.
+
+The different data sets are mixed into one download file because I selected them all together. I will unmix them because they are methodologically incomparable.
+
+The EMODNET data set contains (usually weekly) averages of abundances of different species. There is some hassle with starting and ending dates. Not all data have a correct starting and ending day, as some appear to either be monthly averages or some information is missing. I will check for these separately.
+
+Reading in the basic data files (first the main file, then the measurements and facts)
+```{r}
+bd<-read.csv("20180425_155218_15ae08812c7c53.csv",header = T, 
+             stringsAsFactors = F)
+mf<-read.csv("20180425_155240_15ae088289e138.csv",header = T, 
+             stringsAsFactors = F)
+```
+
+Inspection of the data shows that there is a problem with dates, but also with abundance (fields are empty) for all data that have "1994Cnid" in measurementremarks. We temporarily drop this part of the files to avoid those problems. First we have to merge the two files.
+
+```{r}
+bd<-merge(bd,mf,"occurrenceid")
+bd<-bd[bd$measurementremarks!="1994Cnid",]
+``` 
+
+There are a few records that do not have startdaycollected, but do have enddaycollected, and a few where it is the other way round. We will give the available value to the other, nonavailable one.
+
+```{r}
+bd[is.na(bd$startdaycollected),"startdaycollected"]<-
+   bd[is.na(bd$startdaycollected),"enddaycollected"]
+bd[is.na(bd$enddaycollected),"enddaycollected"]<-
+   bd[is.na(bd$enddaycollected),"startdaycollected"]
+``` 
+
+We want a starting year for all observations. When it is unavailable, we take yearcollected as the starting year
+
+
+```{r}
+bd$startyearcollected[is.na(bd$startyearcollected)]<-
+   bd$yearcollected[is.na(bd$startyearcollected)]
+bd$endyearcollected[is.na(bd$endyearcollected)]<-
+   bd$yearcollected[is.na(bd$endyearcollected)]
+``` 
+
+After checking, we now have startyearcollected and endyearcollected for all records. 
+
+We do the same trick with months
+
+```{r}
+bd$startmonthcollected[is.na(bd$startmonthcollected)]<-
+   bd$monthcollected[is.na(bd$startmonthcollected)]
+bd$endmonthcollected[is.na(bd$endmonthcollected)]<-
+   bd$monthcollected[is.na(bd$endmonthcollected)]
+``` 
+
+Here the check shows we have no missing endmonthcollected, but some missing startmonthcollected. We assign them the value of endmonthcollected.
+
+```{r}
+bd$startmonthcollected[is.na(bd$startmonthcollected)]<-
+   bd$endmonthcollected[is.na(bd$startmonthcollected)]
+``` 
+
+We now calculate a startdate, an enddate, and a mean date for all observations
+
+```{r}
+bd$startdate<-as.Date(paste(bd$startdaycollected,
+                            bd$startmonthcollected,
+                            bd$startyearcollected,sep="/"),
+                      format="%d/%m/%Y")
+bd$enddate<-as.Date(paste(bd$enddaycollected,
+                          bd$endmonthcollected,
+                          bd$endyearcollected,sep="/"),
+                    format="%d/%m/%Y")
+bd$middate<-as.Date(apply(cbind(bd$startdate,bd$enddate),1,FUN=mean),
+                    origin="1970-01-01")
+```
+
+Further checks. We remove all old date columns, one of the identical columns occurrenceid and catalognumber and all meaningless columns (single value).
+
+```{r}
+bd<-bd[,-c(1,(13:21))]
+ul<-apply(bd,2,FUN=function(x) length(unique(x)))
+ll<-which(ul==1)
+bd<-bd[,-ll]
+```
+
+We have to tackle measurement units. There are three units used: ind/m3, ind/60m3 and ind/10m3. We want to express everything as ind/m3 for comparison and consistency.
+
+```{r}
+mu<-unique(bd$measurementunit)
+print(mu)
+```
+
+```{r}
+bd$measurementvalue[bd$measurementunit==mu[6]]<-
+  bd$measurementvalue[bd$measurementunit==mu[6]]/60
+bd$measurementvalue[bd$measurementunit%in%mu[7:8]]<-
+  bd$measurementvalue[bd$measurementunit%in%mu[7:8]]/10
+```
+
+The measurement unit contains two pieces of information: the unit itself, but also the number of samples that have been taken within the week for which the data stand. We do not want to loose the latter information, and store it in a field calle measurementfreq. For each of the unique units we store this frequency in freqs, then determine which unit was used, and give the appropriate element of freqs to the record.
+For all records, we now specify individuals/m3 as the unit, which is true after our transformations.
+
+```{r}
+freqs<-c(4,5,2,3,1,NA,NA,NA,8,7,6,9,10,6,10,8,4,9,7,5,3,1,2)
+wmu<-sapply(bd$measurementunit,FUN=function(x) which(mu==x),
+            USE.NAMES=FALSE)
+bd$measurementfreq<-freqs[wmu]
+bd$measurementunit<-"Individual/m3"
+
+```
+
+This is a good time to save the mother data frame to a binary file.
+
+## Save the bd file
+
+```{r}
+save(bd,file="bd.Rdata")
+```
+
+
+## Subdatasets; Further analysis of bd1
+
+The data set contains a field called datasetid, with three different values. Apparently I have downloaded all three datasets. We intend to analyse each of these three data sets separately. This analysis starts with the first one, which we call bd1. We collect the data of this data set in data frame bd1
+```{r}
+udid<-unique(bd$datasetid)
+bd1<-bd[bd$datasetid==udid[1],-c(15,16,20)]
+```
+
+
+After inspection of the data a number of questions can be posed.
+1. Is the depth range always 0-75 m as it seems? In that case we do not further take it into account
+2. sex/lifestage seems to be a further specification of species, but the impression is that within a species or group no further distinction in different lifestages is made. We check if any species occurs more than once in a single sample as a first test (if not, question closed)
+
+```{r}
+print(unique(bd1$minimumdepth))
+print(unique(bd1$maximumdepth))
+```
+Depth is OK, no further problems. We will now check if all species only occur once in a sample
+
+```{r}
+require(reshape2)
+bd1c<-dcast(bd1,middate~scientificname_accepted,
+            value.var="measurementvalue",
+            fun.aggregate = function(x) length(x[x>0]))
+print(max(bd1c[,2:ncol(bd1c)]))
+```
+Some species occur twice in a sample. We find out what varies (sex, lifestage)
+```{r}
+print(unique(bd1$sex))
+print(unique(bd1$lifestage))
+```
+There is variation in lifestage, not in sex. What species are affected, and what dates?
+```{r}
+tt<-apply(bd1c[,2:ncol(bd1c)],2,FUN=max)
+ttt<-apply(bd1c[,2:ncol(bd1c)],1,FUN=max)
+print(tt[tt>1])
+print(bd1c[ttt>1,1])
+```
+
+There is distinction in lifestages for some samples, but not for all. We have to lump all lifestages together to make our basic crosstable
+
+```{r}
+bd1c<-dcast(bd1,middate~scientificname_accepted,
+            value.var="measurementvalue",
+            fun.aggregate = sum)
+```
+
+Basic inspection of the data. We make a plot of the time series for all species. It is stored in speciesplotsbd1.pdf
+```{r}
+pdf("speciesplotsbd1.pdf")
+for (i in 2:ncol(bd1c)){
+   plot(bd1c[,1],bd1c[,i],main=names(bd1c)[i],xlab="Time",
+        ylab="Density (n/m3)")
+}
+dev.off()
+```
+Disaster striking. This "dataset" appears to be split in subdatasets that do not overlap in time and have quite different species sets. Maybe the field measurementremarks can help us. It is available for all records and has a limited number of values. We plot the presence of samples in the different categories in time. We do it for the entire file bd, not just for bd1.
+```{r}
+mrs<-unique(bd$measurementremarks)
+for (i in 1:length(mrs)){
+  tt<-unique(bd$middate[bd$measurementremarks==mrs[i]])
+  if(i==1){plot(tt,rep(1,length(tt)),ylim=c(0,length(mrs)),
+               xlim=c(as.Date("1940-01-01"),as.Date("2010-01-01")))
+    }else{
+           points(tt,rep(i,length(tt)))
+    }
+  text(as.Date("1950-01-01"),i,labels=mrs[i],cex=0.75)
+}
+
+```
+
+This sheds new light on the subdivision of the dataset. Let's first look how species distribute over the different classes of measurementremarks, doing this for the entire dataset bd
+
+```{r}
+tt<-dcast(bd,measurementremarks~scientificname_accepted,
+          value.var="measurementvalue",
+          fun.aggregate = function(x) length(x[x>0]))
+```
+
+I added taxonomic information to this table, and further ordered it to get a better insight. This was done offline, and has resulted in the spreadsheet "species-by-campaigns.xlsx". From this table the following actions were derived:
+1. the xx and 2005xx datasets have the same set of species (which subtly differs from the species set in the other datasets), but the relative occurrence of different species in the two sets differs. It is better to keep them separate, but show them together for the different species
+2. The two 1959xx datasets do not cover the same set of species. They differ in time coverage, without overlap. For some species, a complete series may be shown, but for other species that are exclusive for the later 1959ThalMollCten, it should be indicated that they have only been identified in the last period. This applies to all the Hydrozoa. The reverse (only in first set) is true for Doliolum nationalis. In addition lumping at higher level is needed for Pterotracheidae (family level) and Pyrosoma (genus level).
+3. The 1966xxx set should be treated separately. As it largely overlaps in time with the 1959xx datasets, it may be displayed on the same page with the same x-axis.
+4. The datasets 2004Larv and 2005Larv only contain information on larvae of larger taxonomic groups. They are comparable between them. We can better add "larvae" to the scientificname_accepted, so as to make clear this concerns larvae.
+
+## Treatment of the 2004xx and 2005xx datasets
+
+First, we take the 2004xxx and 2005xxx datasets. As we want to show them together, we need the same set of species in both. We extract them together from the dataset, then do some manipulations that are common, and finally treat them separately.
+
+```{r}
+bd200<-bd[substr(bd$measurementremarks,1,3)=="200",]
+```
+
+Check variability of lifestages. There is only variation on lifestage for samples of larvae. We use the lifestage as species indication here.
+
+```{r}
+unique(bd200$lifestage)
+unique(bd200[bd200$lifestage!="","measurementremarks"])
+#correct typing inconsistency in lifestage
+bd200$lifestage[bd200$lifestage=="Polychaeta  Larva"]<-
+                                  "Polychaeta larva"
+ll<-which(bd200$lifestage!="")
+bd200$scientificname_accepted[ll]<-bd200$lifestage[ll]
+bd200$set<-substr(bd200$measurementremarks,1,4)
+```
+We make a cross-table of this dataset by species and then split it into the 2004 and 2005 datasets.
+
+```{r}
+ct200<-dcast(bd200,middate+set~scientificname_accepted,
+             value.var="measurementvalue",fun.aggregate = sum)
+ct2004<-ct200[ct200$set=="2004",-2]
+ct2005<-ct200[ct200$set=="2005",-2]
+```
+
+We check the time differences between the samples, and add dummy observations (NA) where there is a gap, so as to have a proper weekly series. In the 2004 dataset we correct the date of sample 78. We drop the last 11 (too sparse) observations. In the 2005 dataset we drop the last 9 observations.
+
+```{r}
+# time differences
+print(diff(as.numeric(ct2004$middate)))
+print(diff(as.numeric(ct2005$middate)))
+# correct date 78 in 2004
+ct2004$middate[78]<-as.Date(as.numeric(ct2004$middate[78])-2,
+                            origin="1970-01-01")
+# drop last 11 observations in 2004
+nr<-nrow(ct2004)
+ll<-(nr-10):nr
+ct2004<-ct2004[-ll,]
+# drop last 9 observations in 2005
+nr<-nrow(ct2005)
+ll<-(nr-8):nr
+ct2005<-ct2005[-ll,]
+# insert 'empty' weeks in 2004
+tt<-ct2004[1,]
+tt[2:length(tt)]<-rep(NA,(ncol(ct2004)-1))
+i<-2
+while (i < nrow(ct2004)){
+  if(as.numeric(ct2004$middate[i])-as.numeric(ct2004$middate[i-1])>7){
+    tt[1]<-as.Date(as.numeric(ct2004$middate[i])-7,origin="1970-01-01")
+    ct2004<-rbind(ct2004,tt)
+    ct2004<-ct2004[order(ct2004$middate),]
+  }else{i<-i+1}
+}
+# insert 'empty' weeks in 2005
+tt<-ct2005[1,]
+tt[2:length(tt)]<-rep(NA,(ncol(ct2005)-1))
+i<-2
+while (i < nrow(ct2005)){
+  if(as.numeric(ct2005$middate[i])-as.numeric(ct2005$middate[i-1])>7){
+    tt[1]<-as.Date(as.numeric(ct2005$middate[i])-7,origin="1970-01-01")
+    ct2005<-rbind(ct2005,tt)
+    ct2005<-ct2005[order(ct2005$middate),]
+  }else{i<-i+1}
+}
+# determine species frequency
+nc<-ncol(ct2004)
+spfr2004<-c(220,apply(ct2004[,2:nc],2,
+                      FUN=function(x) length(x[x>0 & !is.na(x)])))
+nc<-ncol(ct2005)
+spfr2005<-c(220,apply(ct2005[,2:nc],2,
+                      FUN=function(x) length(x[x>0 & !is.na(x)])))
+# drop species with a combined frequency in both datasets <25
+spfr<-spfr2004+spfr2005
+ll<-which(spfr<25)
+ct2004<-ct2004[,-ll]
+ct2005<-ct2005[,-ll]
+# and save ct2004 and ct2005 for later use
+save(ct2004,file="ct2004.Rdata")
+save(ct2005,file="ct2005.Rdata")
+```
+This finishes for now the datasets. We prepare a pdf file with the plots per species, showing for each species both datasets.
+```{r}
+pdf("speciesplots200xxx.pdf")
+par(mfrow=c(2,1))
+for (i in 2:ncol(ct2005)){
+  par(mar=c(0,4,4,2),xaxt="n")
+  plot(ct2004$middate,log(ct2004[,i]+1),type="b",main=names(ct2004[i]),
+        ylab="log Abundance (n/m3)",xlab="Time",
+        xlim=c(as.Date("2004-01-01"),as.Date("2009-01-01")))
+  par(mar=c(5,4,0.5,2),xaxt="s")
+  plot(ct2005$middate,log(ct2005[,i]+1),type="b",
+          ylab="log Abundance (n/m3)",
+          xlab="Time",xlim=c(as.Date("2004-01-01"),as.Date("2009-01-01")))
+  par(mar=c(5,4,4,2)+0.1)
+}
+par(mfrow=c(1,1))
+dev.off()
+```
+
+## Treatment of the 1959xx datasets
+
+We extract both datasets from the overall dataset.
+Next we check for lifestages and sex.
+Sometimes a lifestage is indicated for Salpa, but only in the second of the two data sets. We check whether this results in two occurrences of the species at the same date. It does. We further check for which species no lifestages are indicated. For Pyrosoma, Pterotrachea and Lampetia lifestages are never indicated, for all other species they are always indicated.
+
+```{r}
+bd1959<-bd[substr(bd$measurementremarks,1,4)=="1959",]
+unique(bd1959$lifestage)
+unique(bd1959$sex)
+unique(bd1959$measurementremarks[bd1959$lifestage!=""])
+sf<-dcast(bd1959,middate~scientificname_accepted,
+          fun.aggregate = function(x) length(x[x>0]),
+          value.var = "measurementvalue")
+print(max(sf[,2:ncol(sf)]))
+for (i in 2:ncol(sf)) print(paste(names(sf)[i],max(sf[,i])))
+print(unique(bd1959$scientificname_accepted[bd1959$measurementremarks==
+              "1959ThalMollCten" & bd1959$lifestage==""]))
+print(which(bd1959$scientificname_accepted==
+              "Pyrosoma"&bd1959$lifestage!=""))
+print(which(bd1959$scientificname_accepted==
+              "Pterotrachea"&bd1959$lifestage!=""))
+print(which(bd1959$scientificname_accepted==
+              "Lampetia"&bd1959$lifestage!=""))
+```
+What to do with the lifestages? They are not indicated in the first subdataset, which is the big majority of samples. We decide for now to lump them, so as to make the two datasets comparable in this respect. 
+
+Next we have to lump species at the family and genus level to make the two sets comparable.This is needed for Pterotracheidae (family level) and Pyrosoma (genus level.
+
+Then we make a cross table, making sure we sum values so as to lump lifestages.
+We transform Hydrozoa and Doliolum nationalis in the second dataset into NAs, as they were only recorded in the ThalMollCnid dataset.
+We also add interuptions in the dataset where there are gaps in the time series.
+
+```{r}
+bd1959$scientificname_accepted[bd1959$genus=="Pyrosoma"]<- "Pyrosoma"
+bd1959$scientificname_accepted[bd1959$family=="Pterotracheidae"]<- "Pterotracheidae"
+ct1959<-dcast(bd1959,middate+measurementremarks~scientificname_accepted,
+              fun.aggregate = function(x) sum(x,na.rm=F),
+              value.var = "measurementvalue")
+unsampledCten<-c("Doliolum nationalis",
+                "Abylopsis tetragona",
+                "Chelophyes appendiculata",
+                "Lensia conoidea",
+                "Lensia subtilis",
+                "Muggiaea atlantica",
+                "Muggiaea kochii",
+                "Hippopodius hippopus")
+ll<-which(names(ct1959)%in%unsampledCten)
+ct1959[ct1959$measurementremarks=="1959ThalMollCten",ll]<-NA
+
+tt<-ct1959[1,]
+tt[3:length(tt)]<-rep(NA,(ncol(ct2005)-2))
+i<-3
+while (i < nrow(ct1959)){
+  if(as.numeric(ct1959$middate[i])-as.numeric(ct1959$middate[i-1])>7){
+    tt[1]<-as.Date(as.numeric(ct1959$middate[i])-7,origin="1970-01-01")
+    tt[2]<-ct1959[i,2]
+    ct1959<-rbind(ct1959,tt)
+    ct1959<-ct1959[order(ct1959$middate),]
+  }else{i<-i+1}
+}
+
+save(ct1959,file="ct1959.Rdata")
+```
+We plot all species in a pdf file, named "speciesplots1959xxx.pdf"
+
+```{r}
+pdf("speciesplots1959xxx.pdf")
+for (i in 3:ncol(ct1959)){
+   plot(ct1959$middate,log(ct1959[,i]+1),type="b",main=names(ct1959[i]),
+        ylab="log Abundance (n/m3)",xlab="Time"
+#        ,
+#        xlim=c(as.Date("2004-01-01"),as.Date("2009-01-01"))
+        )
+}
+```
+
+It is clear from the plots that we still have a problem. There are many species that have not always been looked for. Many zeroes are actually NAs, but it is difficult to decide which precisely. This will require furter information from the data providers. For now it looks like the only species that have really been faithfully sampled are salps. For Hydrozoa only a few years appear consistent.
+
+## Treatment of the 1966xxx datasets
+
+We first select the subset from the overall dataset. We then determine the limit dates for the different subsubsets, as these appear to differ. We will have to turn zeroes into NAs outside these limits.
+This dataset has sex and lifestages for at least some species. We will determine which species and find a plotting solution for this.
+
+```{r}
+bd1966<-bd[substr(bd$measurementremarks,1,4)=="1966",]
+# limits
+sss<-unique(bd1966$measurementremarks)
+print(sss)
+stmin<-stmax<-vector(length=length(sss))
+for (i in 1:length(sss)){
+  stmin[i]<-min(bd1966$middate[bd1966$measurementremarks==sss[i]])
+  stmax[i]<-max(bd1966$middate[bd1966$measurementremarks==sss[i]])
+}
+stmin<-as.Date(stmin,origin="1970-01-01")
+stmax<-as.Date(stmax,origin="1970-01-01")
+# variation in sex and lifestages
+print(unique(bd1966$lifestage))
+print(unique(bd1966$sex))
+print(unique(bd1966$scientificname_accepted[bd1966$lifestage==""]))
+print(unique(bd1966$scientificname_accepted[bd1966$lifestage!=""]))
+print(unique(bd1966$scientificname_accepted[bd1966$sex==""]))
+print(unique(bd1966$scientificname_accepted[bd1966$sex!=""]))
+```
+Lifestage is always given for Aglaura hemistoma, Flaccisagitta enflate, Parasagitta setosa and Liriope tetraphylla, and never for the other species.
+Likewise, sex is always given for the copepods Nannocalanus minor, Calanus helgolandicus and Centropages typicus, and never for the other species. We can take this into account when plotting. In order to do so, we will need a 'sex' and 'lifestage' field in the cross table.
+For all species, we will need to list what columns concern the species, and make sure these columns are in logical order so that they can be displayed cumulatively.
+
+```{r}
+ct1966<-dcast(bd1966,middate~scientificname_accepted+lifestage+sex,
+              fun.aggregate = sum,value.var = "measurementvalue")
+print(names(ct1966))
+spcol<-data.frame(species=c("Abylopsis tetragona",
+                            "Aglaura hemistoma",
+                            "Calanus helgolandicus",
+                            "Centropages typicus",  
+                            "Chelophyes appendiculata",
+                            "Flaccisagitta enflata",
+                            "Hippopodius hippopus",
+                            "Lensia conoidea",  
+                            "Lensia subtilis",
+                            "Liriope tetraphylla",
+                            "Mesosagitta minima",
+                            "Muggiaea atlantica",
+                            "Muggiaea kochii",
+                            "Nannocalanus minor",
+                            "Parasagitta setosa",
+                            "Pleurobrachia rhodopis",
+                            "Rhopalonema velatum",
+                            "Solmundella bitentaculata"),
+            colstart=c(2,3,5,7,9,10,12,13,14,15,
+                             19,20,21,22,24,26,27,28),
+            colend=c(2,4,6,8,9,11,12,13,14,18,19,
+                           20,21,23,25,26,27,28),
+            nstages=c(1,2,2,2,1,2,1,1,1,4,1,1,1,
+                            2,2,1,1,1),
+            stage1=c(NA,"Adult","Female","Female",NA,"Adult",NA,NA,NA,
+                           "Stage1",NA,NA,NA,"Female","Adult",NA,NA,NA),
+            stage2=c(NA,"Juvenile","Male","Male",NA,"Juvenile",NA,NA,NA,
+                           "Stage2",NA,NA,NA,"Male","Juvenile",NA,NA,NA),
+            stage3=c(NA,NA,NA,NA,NA,NA,NA,NA,NA,
+                           "Stage3",NA,NA,NA,NA,NA,NA,NA,NA),
+            stage4=c(NA,NA,NA,NA,NA,NA,NA,NA,NA,
+                           "Stage4",NA,NA,NA,NA,NA,NA,NA,NA)  )
+for (i in 1:nrow(spcol)){
+  sset<-unique(bd1966$measurementremarks[bd1966$scientificname_accepted==
+                                           spcol$species[i]])
+  spcol$stmin[i]<-stmin[which(sss==sset)]
+  spcol$stmax[i]<-stmax[which(sss==sset)]
+}
+
+```
+We have to take care of too long empty patches in the time series, substituting holes with NAs.
+```{r}
+tt<-ct1966[1,]
+tt[2:length(tt)]<-rep(NA,(ncol(ct1966)-1))
+i<-2
+while (i < nrow(ct1966)){
+  if(as.numeric(ct1966$middate[i])-as.numeric(ct1966$middate[i-1])>7){
+    tt[1]<-as.Date(as.numeric(ct1966$middate[i])-7,origin="1970-01-01")
+    ct1966<-rbind(ct1966,tt)
+    ct1966<-ct1966[order(ct1966$middate),]
+  }else{i<-i+1}
+}
+```
+We proceed by making basic plots of all species, subdivided into groups when required. We also blank all observations outside of the appropriate observations windows.
+```{r}
+for(i in 1:nrow(spcol)){
+  for (j in spcol$colstart[i]:spcol$colend[i]){
+    ct1966[ct1966$middate<spcol$stmin[i] | ct1966$middate>spcol$stmax[i],j]<-NA
+  }
+}
+
+pdf("speciesplots1966.pdf")
+cols<-c("black","red","darkgreen","darkblue")
+for(i in 1:nrow(spcol)){
+  plot(ct1966$middate,log(ct1966[,spcol$colstart[i]]+1),type="l",
+       main=spcol$species[i],xlab="Time",ylab="log Abundance /m3",
+       xlim=c(as.Date("1966-01-01"),as.Date("2000-01-01")),col=cols[1])
+  j<-spcol$colstart[i]+1
+  curser<-ct1966[,spcol$colstart[i]]+1
+  curcol<-2
+  while(j<=spcol$colend[i]){
+    lines(ct1966$middate,log(ct1966[,j]+curser),type="l",col=curcol+1)
+    curser<-curser+ct1966[,j]
+    curcol<-curcol+1
+    j<-j+1
+  }
+}
+dev.off()
+```
+
+## End of analysis

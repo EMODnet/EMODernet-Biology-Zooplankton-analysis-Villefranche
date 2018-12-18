@@ -22,7 +22,8 @@ Description of datasets:
 |Regent net 	|http://www.emodnet-biology.eu/data-catalog?module=dataset&dasid=5923 |
   
 Link to download toolbox: http://www.emodnet-biology.eu/toolbox/en/download/selection/15c07e9de85683
-Downlaod the occurrences *and* the measurements of facts!
+
+Download the occurrences *and* the measurements of facts!
 
 
 # Full analysis and code

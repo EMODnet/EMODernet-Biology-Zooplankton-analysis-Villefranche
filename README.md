@@ -16,12 +16,11 @@ Description of datasets:
 
 |Dataset type 	|EMODnet Biology link|
 | ------------- |-------------|
-|surface observations 	|http://www.emodnet-biology.eu/data-catalog?module=dataset&dasid=5924 |
 |Juday-Bogorov net 	|http://www.emodnet-biology.eu/data-catalog?module=dataset&dasid=5918 |
 |Juday-Bogorov net 	|http://www.emodnet-biology.eu/data-catalog?module=dataset&dasid=5925 |
 |Regent net 	|http://www.emodnet-biology.eu/data-catalog?module=dataset&dasid=5923 |
   
-Link to download toolbox: http://www.emodnet-biology.eu/toolbox/en/download/selection/15c07e9de85683
+Link to download toolbox: http://www.emodnet-biology.eu/toolbox/en/download/selection/15cd4137e61fda
 
 Download the occurrences *and* the measurements of facts!
 

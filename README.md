@@ -5,7 +5,7 @@ This product is a workflow and an example of how data from EMODnet Biology can b
 
 This is the Github repository of the EMODnet Biology product described here:
 
-http://emodnet-biology.eu/long-term-zooplankton-time-series-analysis-form-villefranche-western-mediteeranean
+https://emodnet-biology.eu/data-catalog?module=dataset&dasid=6284
 
 
 # Data Series
